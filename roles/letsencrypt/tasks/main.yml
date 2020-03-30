@@ -1,0 +1,96 @@
+- name: Creating Let's Encrypt folder
+  file:
+    path: /blog/certs
+    state: directory
+    mode: '0755'
+  file:
+    path: "/blog/certs/{{ domain_name }}"
+    state: directory
+    mode: '0755'
+
+- name: Generate new RSA key using default key size (4096) for ansible
+  openssl_privatekey:
+    path: /blog/certs/ansible.pem
+
+- name: Generate new RSA key using default key size (4096) for domain
+  openssl_privatekey:
+    path: "/blog/certs/{{ domain_name }}.key"
+
+- name: Create CSR for certificate
+  openssl_csr:
+    path: "/blog/certs/{{ domain_name }}/{{ domain_name }}.csr"
+    privatekey_path: "/blog/certs/{{ domain_name }}.key"
+    common_name: "{{ domain_name }}"
+
+- name: "Create a challenge for {{ domain_name }} using a account key file"
+  acme_certificate:
+    account_key_src: /blog/certs/ansible.pem
+    account_email: "{{ le_email_address }}"
+    src: "/blog/certs/{{ domain_name }}/{{ domain_name }}.csr"
+    cert: "/blog/certs/{{ domain_name }}/{{ domain_name }}.crt"
+    challenge: dns-01
+    terms_agreed: yes
+    acme_version: 2
+    acme_directory: "{{ le_directory }}"
+    # Renew if the certificate is at least 30 days old
+    remaining_days: 60
+  register: cert_challenge
+
+- set_fact:
+    challenge_record: "{{ cert_challenge.challenge_data[domain_name]['dns-01'].record }}"
+  when: cert_challenge is changed
+- set_fact:
+    challenge_value: "{{ cert_challenge.challenge_data[domain_name]['dns-01'].resource_value }}"
+  when: cert_challenge is changed
+
+- name: Create Cloudflare DNS challenge DNS record
+  cloudflare_dns:
+    zone: "{{ domain_name }}"
+    solo: yes
+    type: TXT
+    ttl: 120
+    record: "{{ challenge_record }}"
+    value: "{{ challenge_value }}"
+    account_email: "{{ cf_email }}"
+    account_api_token: "{{ cf_api_key }}"
+  register: record
+  when: cert_challenge is changed
+
+- name: Waiting for Cloudflare DNS validation and retrieve the cert and intermediate certificate
+  acme_certificate:
+    account_key_src: /blog/certs/ansible.pem
+    account_email: "{{ le_email_address }}"
+    src: "/blog/certs/{{ domain_name }}/{{ domain_name }}.csr"
+    cert: "/blog/certs/{{ domain_name }}/{{ domain_name }}.crt"
+    fullchain_dest: "/blog/certs/{{ domain_name }}/{{ domain_name }}-fullchain.crt"
+    chain: "/blog/certs/{{ domain_name }}/{{ domain_name }}-intermediate.crt"
+    challenge: dns-01
+    terms_agreed: yes
+    acme_version: 2
+    acme_directory: "{{ le_directory }}"
+    remaining_days: 60
+    data: "{{ cert_challenge }}"
+  when: cert_challenge is changed
+
+- name: Delete Cloudflare DNS challenge record
+  cloudflare_dns:
+    zone: "{{ domain_name }}"
+    type: TXT
+    record: "{{ challenge_record }}"
+    value: "{{ challenge_value }}"
+    account_email: "{{ cf_email }}"
+    account_api_token: "{{ cf_api_key }}"
+    state: absent
+  when: cert_challenge is changed
+
+- name: "Ensuring Cloudflare is set to strict for SSL settings"
+  uri:
+    url: "https://api.cloudflare.com/client/v4/zones/{{ hostvars['localhost']['cf_dns_zone'] }}/settings/ssl"
+    method: PATCH
+    headers:
+      Content-Type: application/json
+      X-Auth-Key: "{{ cf_api_key }}"
+      X-Auth-Email: "{{ cf_email }}"
+    body: { "value": "strict" }
+    body_format: json
+    status_code: 200

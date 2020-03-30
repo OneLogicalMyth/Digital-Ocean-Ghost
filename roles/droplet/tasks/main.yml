@@ -1,0 +1,66 @@
+- name: Checking that SSH keys are all present on Digital Ocean
+  digital_ocean:
+    state: present
+    command: ssh
+    name: "{{ item.value.key_name }}"
+    ssh_pub_key: "{{ item.value.pub_key }}"
+    api_token: "{{ do_api_token }}"
+  with_dict: "{{ do_ssh_keys }}"
+  register: do_ssh_key_ids
+
+- name: Building up SSH fingerprints for droplet deployment
+  set_fact:
+    ssh_fingerprints: []
+- set_fact:
+    ssh_fingerprints: "{{ ssh_fingerprints }} + [ '{{ item.ssh_key.fingerprint }}' ]"
+  with_items: "{{ do_ssh_key_ids.results }}"
+
+- name: Deploying droplet to Digital Ocean
+  digital_ocean:
+    state: present
+    command: droplet
+    unique_name: yes
+    name: "ghost-blog-{{ domain_name }}"
+    api_token: "{{ do_api_token }}"
+    size_id: "{{ do_size }}"
+    region_id: "{{ do_region }}"
+    image_id: "{{ do_image_id }}"
+    ssh_key_ids: "{{ ssh_fingerprints }}"
+    wait_timeout: 1000
+  register: new_droplet
+
+- name: "Droplet built with the IP of {{ new_droplet.droplet.ip_address }}"
+  set_fact:
+    droplet_ip: "{{ new_droplet.droplet.ip_address }}"
+
+- name: Adding droplet to dynamic inventory
+  add_host:
+    name: "{{ droplet_ip }}"
+    groups: droplet
+    ansible_connection: ssh
+    ansible_user: "root"
+    ansible_ssh_private_key_file: "{{ ssh_access }}"
+
+- name: Waiting for SSH to become open on droplet
+  wait_for:
+    host: "{{ droplet_ip }}"
+    port: 22
+
+- name: Testing SSH access to droplet
+  ping:
+  delegate_to: "{{ droplet_ip }}"
+
+- name: Registering droplet in Cloudflare DNS
+  cloudflare_dns:
+    zone: "{{ domain_name }}"
+    proxied: yes
+    solo: yes
+    type: A
+    value: "{{ droplet_ip }}"
+    account_email: "{{ cf_email }}"
+    account_api_token: "{{ cf_api_key }}"
+  register: record
+
+- set_fact:
+    cf_dns_zone: "{{ record.result.record.zone_id }}"
+    when: cert_challenge is defined

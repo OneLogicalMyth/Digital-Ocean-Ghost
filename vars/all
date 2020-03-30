@@ -1,0 +1,36 @@
+# Generic params
+# ssh_access is the private key for ansible to use
+# ensure the public key for the below private key is included in the below var do_ssh_keys
+ssh_access: ~/.ssh/id_rsa
+
+# Digital Ocean Variables
+# Size 1gb is $5 pcm
+# paste the public keys you want adding to the box after creation as per the example below
+#  64 char DO api key below
+do_api_token: "DO API KEY HERE"
+do_ssh_keys:
+  key1:
+    key_name: "Host Laptop"
+    pub_key: "ssh-rsa AAAAA... user@host"
+  key2:
+    key_name: "Work Laptop"
+    pub_key: "ssh-rsa BBBB..."
+  key3:
+    key_name: "Work Desktop"
+    pub_key: "ssh-rsa CCCC..."
+do_region: lon1
+do_image_id: ubuntu-18-04-x64
+do_size: s-1vcpu-1gb
+
+# Blog Configuration
+domain_name: example.com
+blog_url: "https://example.com"
+
+# Let's Encrypt
+le_email_address: "user@example.com"
+le_directory: https://acme-v02.api.letsencrypt.org/directory
+# when testing use - https://acme-staging-v02.api.letsencrypt.org/directory
+
+# Cloudflare API Key
+cf_api_key: "Global API Key"
+cf_email: "user@example.com"

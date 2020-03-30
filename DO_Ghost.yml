@@ -1,0 +1,28 @@
+- hosts: 127.0.0.1
+  gather_facts: no
+  tasks:
+  - name: Installing required PIP packages for Ansible host to work with this playbook
+    pip:
+      name: ['dopy', 'requests']
+
+- hosts: 127.0.0.1
+  gather_facts: no
+  vars_files:
+    - vars/all
+  roles:
+    - droplet
+
+- hosts: droplet
+  gather_facts: yes
+  vars_files:
+    - vars/all
+  roles:
+    - docker
+    - letsencrypt
+    - ghost
+
+- hosts: 127.0.0.1
+  name: Generating results file with information of deployment
+  tasks:
+  - debug:
+      msg: "The droplet IP is {{ droplet_ip }}"

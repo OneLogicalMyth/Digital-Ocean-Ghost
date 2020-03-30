@@ -1,0 +1,61 @@
+- name: Creating Ghost content folder
+  file:
+    path: /blog/content
+    state: directory
+    mode: '0755'
+
+- name: Creating Nginx folder
+  file:
+    path: /blog/nginx
+    state: directory
+    mode: '0755'
+
+- name: Copying Nginx nginx.conf configuration
+  template:
+    src: nginx.conf
+    dest: /blog/nginx/nginx.conf
+    mode: 0644
+
+- name: Copying Nginx ssl-params.conf configuration
+  copy:
+    src: ssl-params.conf
+    dest: /blog/nginx/ssl-params.conf
+    mode: 0644
+
+- name: Generating Diffie-Hellman with the default size (4096 bits)
+  openssl_dhparam:
+    path: /blog/nginx/dhparams.pem
+
+- name: Building Ghost and Nginx on droplet
+  docker_compose:
+    project_src: ghost
+    state: absent
+  docker_compose:
+    project_name: ghost
+    definition:
+      version: '3'
+      services:
+        proxy:
+          image: nginx:latest
+          container_name: proxy
+          volumes:
+            - /blog/nginx/nginx.conf:/etc/nginx/nginx.conf
+            - /blog/nginx/dhparams.pem:/etc/nginx/dhparams.pem
+            - /blog/nginx/ssl-params.conf:/etc/nginx/ssl-params.conf
+            - "/blog/certs/{{ domain_name }}/{{ domain_name }}-fullchain.crt:/etc/nginx/{{ domain_name }}-fullchain.crt"
+            - "/blog/certs/{{ domain_name }}.key:/etc/nginx/{{ domain_name }}.key"
+          ports:
+            - 443:443
+          depends_on:
+            - ghost
+        ghost:
+          image: ghost:latest
+          restart: always
+          expose:
+            - 2368
+          volumes:
+            - /blog/content:/var/lib/ghost/content
+          environment:
+            url: "{{ blog_url }}"
+          container_name: ghost
+  register: output

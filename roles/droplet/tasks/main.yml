@@ -63,4 +63,3 @@
 
 - set_fact:
     cf_dns_zone: "{{ record.result.record.zone_id }}"
-    when: cert_challenge is defined
